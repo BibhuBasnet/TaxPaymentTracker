@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tax and Payment Tracker</title>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: #f9f9f9;
+        }
+        h1 {
+            text-align: center;
+        }
+        table {
+            border-collapse: collapse;
+            width: 100%;
+            margin-top: 20px;
+            background-color: #fff;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 12px;
+            text-align: center;
+        }
+        th {
+            background-color: #f4f4f4;
+            color: #333;
+        }
+        tr:nth-child(even) {
+            background-color: #f9f9f9;
+        }
+        tr:hover {
+            background-color: #f1f1f1;
+        }
+        form {
+            margin-bottom: 20px;
+        }
+        #editModal {
+            display: none;
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: #fff;
+            padding: 20px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+            z-index: 1000;
+        }
+        #editModal input, #editModal select {
+            display: block;
+            margin-bottom: 10px;
+            width: 100%;
+            padding: 8px;
+        }
+        #overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            display: none;
+            z-index: 999;
+        }
+    </style>
+</head>
+<body>
+    <h1>Tax and Payment Tracker</h1>
+
+    <h3>Add Payment Record</h3>
+    <form id="paymentForm">
+        Company: <input type="text" id="company" required>
+        Amount: <input type="number" id="amount" required>
+        Payment Date: <input type="date" id="payment_date">
+        Status: 
+        <select id="status">
+            <option value="paid">Paid</option>
+            <option value="unpaid">Unpaid</option>
+        </select>
+        Due Date:
+        <select id="due_date"></select>
+        <button type="submit">Save</button>
+    </form>
+
+    <h3>All Records</h3>
+    <table id="recordsTable">
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>Company</th>
+                <th>Amount</th>
+                <th>Payment Date</th>
+                <th>Status</th>
+                <th>Due Date</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody></tbody>
+    </table>
+
+    <h3>Summary by Due Date</h3>
+    <select id="filter_due_date"></select>
+    <table id="summaryTable">
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>Company</th>
+                <th>Amount</th>
+                <th>Payment Date</th>
+                <th>Status</th>
+                <th>Due Date</th>
+            </tr>
+        </thead>
+        <tbody></tbody>
+    </table>
+    <div id="summary">
+        <p id="totalAmount"></p>
+    </div>
+
+    <div id="overlay"></div>
+    <div id="editModal">
+        <h3>Edit Payment Record</h3>
+        Company: <input type="text" id="edit_company" required>
+        Amount: <input type="number" id="edit_amount" required>
+        Payment Date: <input type="date" id="edit_payment_date">
+        Status: 
+        <select id="edit_status">
+            <option value="paid">Paid</option>
+            <option value="unpaid">Unpaid</option>
+        </select>
+        Due Date:
+        <select id="edit_due_date"></select>
+        <button id="saveEdit">Save</button>
+        <button id="cancelEdit">Cancel</button>
+    </div>
+
+    <script>
+        const dueDates = ["April 15", "June 15", "September 15", "January 15"];
+        const currentYear = new Date().getFullYear();
+
+        dueDates.forEach(date => {
+            $("#due_date, #filter_due_date, #edit_due_date").append(
+                `<option value="${date} ${date === "January 15" ? currentYear + 1 : currentYear}">
+                    ${date} ${date === "January 15" ? currentYear + 1 : currentYear}
+                </option>`
+            );
+        });
+
+        function fetchRecords() {
+            $.get('http://127.0.0.1:5000/payments', function (data) {
+                $("#recordsTable tbody").empty();
+                data.forEach(record => {
+                    $("#recordsTable tbody").append(
+                        `<tr>
+                            <td>${record.id}</td>
+                            <td>${record.company}</td>
+                            <td>$${record.amount.toFixed(2)}</td>
+                            <td>${record.payment_date}</td>
+                            <td>${record.status}</td>
+                            <td>${record.due_date}</td>
+                            <td>
+                                <button onclick="openEditModal(${record.id}, '${record.company}', ${record.amount}, '${record.payment_date}', '${record.status}', '${record.due_date}')">Edit</button>
+                                <button onclick="deleteRecord(${record.id})">Delete</button>
+                            </td>
+                        </tr>`
+                    );
+                });
+            });
+        }
+
+        function openEditModal(id, company, amount, paymentDate, status, dueDate) {
+            $("#edit_company").val(company);
+            $("#edit_amount").val(amount);
+            $("#edit_payment_date").val(paymentDate);
+            $("#edit_status").val(status);
+            $("#edit_due_date").val(dueDate);
+
+            $("#editModal").data("recordId", id).fadeIn();
+            $("#overlay").fadeIn();
+        }
+
+        $("#cancelEdit").on("click", function () {
+            $("#editModal").fadeOut();
+            $("#overlay").fadeOut();
+        });
+
+        $("#saveEdit").on("click", function () {
+            const id = $("#editModal").data("recordId");
+            const data = {
+                id,
+                company: $("#edit_company").val(),
+                amount: $("#edit_amount").val(),
+                payment_date: $("#edit_payment_date").val(),
+                status: $("#edit_status").val(),
+                due_date: $("#edit_due_date").val()
+            };
+
+            $.ajax({
+                url: 'http://127.0.0.1:5000/payments',
+                type: 'PUT',
+                contentType: 'application/json',
+                data: JSON.stringify(data),
+                success: function () {
+                    alert("Record updated successfully!");
+                    fetchRecords(); // Reload the records table
+                    $("#editModal").fadeOut();
+                    $("#overlay").fadeOut();
+                },
+                error: function () {
+                    alert("Error updating the record!");
+                }
+            });
+        });
+
+        $("#paymentForm").on("submit", function (e) {
+            e.preventDefault();
+            const data = {
+                company: $("#company").val(),
+                amount: $("#amount").val(),
+                payment_date: $("#payment_date").val(),
+                status: $("#status").val(),
+                due_date: $("#due_date").val()
+            };
+
+            $.ajax({
+                url: 'http://127.0.0.1:5000/payments',
+                type: 'POST',
+                contentType: 'application/json',
+                data: JSON.stringify(data),
+                success: function () {
+                    alert("Record added successfully!");
+                    fetchRecords(); // Reload the records table
+                },
+                error: function() {
+                    alert("Error saving the record!");
+                }
+            });
+        });
+
+        function deleteRecord(id) {
+            $.ajax({
+                url: 'http://127.0.0.1:5000/payments',
+                type: 'DELETE',
+                contentType: 'application/json',
+                data: JSON.stringify({ id }),
+                success: function () {
+                    fetchRecords(); // Reload the records table
+                }
+            });
+        }
+
+        $("#filter_due_date").on("change", function () {
+            const selectedDate = $(this).val();
+            $.get(`http://127.0.0.1:5000/summary/${selectedDate}`, function (data) {
+                $("#summaryTable tbody").empty();
+                data.records.forEach(record => {
+                    $("#summaryTable tbody").append(
+                        `<tr>
+                            <td>${record.id}</td>
+                            <td>${record.company}</td>
+                            <td>$${record.amount.toFixed(2)}</td>
+                            <td>${record.payment_date}</td>
+                            <td>${record.status}</td>
+                            <td>${record.due_date}</td>
+                        </tr>`
+                    );
+                });
+                $("#totalAmount").html(
+                    `<p>Total Amount: $${data.total_amount.toFixed(2)}</p>
+                    <p>Tax Rate: ${data.tax_rate}%</p>
+                    <p>Total Tax Due: $${data.total_tax_due.toFixed(2)}</p>`
+                );
+            });
+        });
+
+        fetchRecords();
+    </script>
+</body>
+</html>
